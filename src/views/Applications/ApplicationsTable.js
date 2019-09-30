@@ -1,128 +1,197 @@
-import React, { Fragment, useState } from 'react';
-import moment from 'moment';
+import React, {Fragment, useState, useEffect} from 'react';
+import BootstrapTable from 'react-bootstrap-table-next';
+import 'react-bootstrap-table-next/dist/react-bootstrap-table2.min.css'
+import paginationFactory from 'react-bootstrap-table2-paginator';
+import 'react-bootstrap-table2-paginator/dist/react-bootstrap-table2-paginator.min.css';
 import {
-    Card,
-    CardBody,
-    Row,
-    Col,
-    Button,
-    Table,
-    Progress,
-    Input,
-    InputGroup,
-    InputGroupAddon,
-    InputGroupText
+    Card, CardBody, Progress, Button, Row, Col, Input, InputGroup,
+    InputGroupAddon, InputGroupText, Label
 } from 'reactstrap';
+import moment from 'moment';
+import Select from 'react-select';
+import makeAnimated from 'react-select/animated';
+import Truncate from 'react-truncate';
 
-const levelCalculate = (val) => {
-    return (val/5) * 100;
-}
+const LEVEL_ALL = 'All';
+const LEVEL_MEDIUM = 'Medium';
+const LEVEL_ADVANCED = 'Advanced';
 
-const downloadAttachment = url => {
-    return url && window.open(url, '_blank');
-}
+const ENGLISH_LEVEL_OPTIOS = [
+    {value: LEVEL_ALL, label: LEVEL_ALL},
+    {value: LEVEL_MEDIUM, label: LEVEL_MEDIUM},
+    {value: LEVEL_ADVANCED, label: LEVEL_ADVANCED}
+];
 
-const rowGenerator = (data) => {
-    const {name, lastName, englishLevel, url, createdAt, mainSkills} = data;
-    const fullName = `${name} ${lastName}`;
-    const percentLevel = englishLevel ? levelCalculate(englishLevel) : 0;
-    const skills = mainSkills || [];
-    const applicationDate = moment(Number.parseInt(createdAt)).format('L');
-    return (
-        <tr key={data.id}>
-            <td>{fullName}</td>
-            <td>{skills.map(s => s.name).join(', ')}</td>
-            <td>
-                <div className="clearfix">
-                    <div className="float-left">
-                        <strong>{percentLevel}%</strong>
-                    </div>
-                </div>
-                <Progress className="progress-xs" color="info" value={percentLevel} />
-            </td>
-            <td>
-                <Button color="primary" size="sm" onClick={_ => downloadAttachment(url)}>Download <i className="icon-cloud-download"></i></Button>
-            </td>
-            <td>{applicationDate}</td>
-        </tr>
-    )
-}
+const levelCalculate = val => ((val/5) * 100);
+const downloadAttachment = url => url && window.open(url, '_blank');
+const attachmentFormat = (cell, row) => <Button color="primary" size="sm" onClick={_ => downloadAttachment(cell)}>Download <i className="icon-cloud-download"></i></Button>;
+const englishLevelFormat = (cell, row) => <Fragment>
+                                            <div className="clearfix">
+                                                <div className="float-left">
+                                                    <strong>{cell}%</strong>
+                                                </div>
+                                            </div>
+                                            <Progress className="progress-xs" color="info" value={cell} />
+                                        </Fragment>;
 
 const formatData = (data) => {
-    const {applicationSkill, ...restData} = data;
-    const mainSkills = applicationSkill.filter(as => as.isMain && as.skill).map(as => {
-        return {id: as.id, name: as.skill.name, description: as.skill.description}
-    });
+    const {name, lastName, applicationSkill, url, englishLevel, createdAt} = data;
+    const percentLevel = englishLevel ? levelCalculate(englishLevel) : 0;
+    let mainSkills = '', otherSkills = '';
+    if(applicationSkill){
+        mainSkills = applicationSkill.filter(as => as.skill && as.isMain).map(s => s.skill.name).join(', ');
+        otherSkills = applicationSkill.filter(as => as.skill && !as.isMain).map(s => s.skill.name).join(', ');
+    }
 
-    return {...restData, mainSkills}
+    return {
+        fullName: `${name} ${lastName}`,
+        mainSkills,
+        otherSkills,
+        englishLevel:percentLevel,
+        applicationDate: moment(Number.parseInt(createdAt)).format('L'),
+        attachment: url
+    }
+
 }
 
-const handleSearchChange = (e, setSearch) => {
-    setSearch(e.currentTarget.value);
+const getCaret = (direction) => {
+    switch (direction) {
+        case 'asc':
+            return <span> <i className="fa fa-caret-up"></i></span>;
+        case 'desc':
+            return <span> <i className="fa fa-caret-down"></i></span>;
+        default:
+            return <span> <i className="fa fa-caret-up text-muted"></i><i className="fa fa-caret-down text-muted"></i></span>;        
+    }
 }
 
-const handleFilter = (search, data) => {
+const handleFilter = (search, data, levelFilter) => {
     const text = search ? search.toLowerCase() : null;
-    return text ? data.filter(d => d.name.toLowerCase().indexOf(text) > -1 || d.lastName.toLowerCase().indexOf(text) > -1) : data;
+    switch (levelFilter) {
+        case LEVEL_MEDIUM:
+                data = data.filter(d => d.englishLevel > 50 && d.englishLevel <= 80)
+            break;
+        case LEVEL_ADVANCED:
+                data = data.filter(d => d.englishLevel > 81)
+                break;
+        default:
+            break;
+    }
+    return text 
+    ? data.filter(d => d.mainSkills.toLowerCase().includes(text) || d.otherSkills.toLowerCase().includes(text)) 
+    : data;
 }
 
-const showLoading = () => <div className="animated fadeIn pt-1 text-center">Loading...</div>
+const SkillsTruncate = ({children}) => {
+    const [seeMore, setSeeMore] = useState(false);
+    return <Fragment>
+        <Truncate
+            lines={!seeMore && 2}
+            ellipsis={(<span>... <small><a href='#' onClick={_ => setSeeMore(true)}>See more</a></small></span>)}
+        >
+            {children}
+        </Truncate>
+        {seeMore && <small> <a href='#' onClick={_ => setSeeMore(false)}>See less</a></small>}
+    </Fragment> 
+    
+}
+
+const skillsFormat = (cell, row) => <div><SkillsTruncate>{cell}</SkillsTruncate></div>;
 
 const ApplicationsTable = props => {
+    const [data, setData] = useState([]);
     const [search, setSearch] = useState(null);
+    const [levelFilter, setLevelFilter] = useState({value: LEVEL_ALL, label: LEVEL_ALL});
 
-    if (props.loading) {
-        return showLoading();
-    }
-    
-    if (props.error) {
-        return (<p>{`Error :( ${props.error}`}</p>)
-    }
+    // didReceiveProps
+    useEffect(() => {
+        setData(props.data.map(d => formatData(d)));
+    }, [props.data]);
 
-    // Aplicando filtro
-    const dataTable = handleFilter(search, props.data);
-    
-    return (
-        <Fragment>
-            <Row className="mb-3">
-                <Col md="4" lg="5">
-                    <InputGroup>
-                        <InputGroupAddon addonType="prepend">
-                            <InputGroupText><i className="fa fa-search"></i></InputGroupText>
-                        </InputGroupAddon>
-                        <Input type="text" id="search" name="search" onChange={(e) => handleSearchChange(e, setSearch)} placeholder="Search"/>
-                    </InputGroup>
-                </Col>
-            </Row>
-            <Row>
-                <Col>
-                    <Card>
-                        <CardBody className="mt-3">
-                            <Table hover responsive >
-                                <thead className="thead-light">
-                                    <tr>
-                                        <th>FullName</th>
-                                        <th>Main Skills</th>
-                                        <th>English Level</th>
-                                        <th>Attachment</th>
-                                        <th>Application Date</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {
-                                        dataTable.map(d => {
-                                            const dataF = formatData(d);
-                                            return rowGenerator(dataF)
-                                        })
-                                    }
-                                </tbody>
-                            </Table>
-                        </CardBody>
-                    </Card>
-                </Col>
-            </Row>
-        </Fragment>
-    )
+    const dataTable = handleFilter(search, data, levelFilter.value);
+
+    const columns = [{
+        dataField: 'fullName',
+        text: 'FullName',
+        sort: true,
+        sortCaret: getCaret
+      }, {
+        dataField: 'mainSkills',
+        text: 'Main Skills',
+        sort: true,
+        sortCaret: getCaret,
+        formatter: skillsFormat
+      }, {
+        dataField: 'otherSkills',
+        text: 'Other Skills',
+        sort: true,
+        sortCaret: getCaret
+      }
+      , {
+        dataField: 'englishLevel',
+        text: 'English Level',
+        sort: true,
+        sortCaret: getCaret,
+        formatter: englishLevelFormat
+      }
+      , {
+        dataField: 'applicationDate',
+        text: 'Application Date',
+        sort: true,
+        sortCaret: getCaret
+      }
+      , {
+        dataField: 'attachment',
+        text: 'Attachment',
+        formatter: attachmentFormat
+      }
+    ];
+
+    const defaultSorted = [{
+        dataField: 'applicationDate',
+        order: 'desc'
+    }];
+
+    return <Fragment>
+        <Card>
+            <CardBody>
+                <Row className="mb-3 d-flex align-items-end">
+                    <Col md="4" lg="3">
+                        <InputGroup>
+                            <InputGroupAddon addonType="prepend">
+                                <InputGroupText><i className="fa fa-search"></i></InputGroupText>
+                            </InputGroupAddon>
+                            <Input type="text" id="search" name="search" onChange={(e) => setSearch(e.currentTarget.value)} placeholder="Skills Search"/>
+                        </InputGroup>
+                    </Col>
+
+                    <Col md="4" lg="3">
+                        <Label>English Level</Label>
+                        <Select
+                            options={ENGLISH_LEVEL_OPTIOS}
+                            value={levelFilter}
+                            onChange={setLevelFilter}
+                            closeMenuOnSelect={true}
+                            components={makeAnimated()}
+                        />
+                    </Col>
+                </Row>
+            </CardBody>
+        </Card>
+
+        <Card>
+            <CardBody>
+                <BootstrapTable 
+                    loading={props.loading}
+                    keyField="fullName-applicationDate" 
+                    data={ dataTable } 
+                    columns={ columns } 
+                    pagination={ paginationFactory() }
+                    defaultSorted={ defaultSorted }
+                    />
+            </CardBody>
+        </Card>
+    </Fragment>
 }
 
 export default ApplicationsTable;

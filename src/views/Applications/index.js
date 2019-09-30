@@ -7,7 +7,6 @@ import {
 
 import {useQuery} from '@apollo/react-hooks';
 import {GET_APPLICATIONS} from './Queries';
-
 import ApplicationsTable from './ApplicationsTable';
 
 const Applications = props => {
@@ -21,7 +20,7 @@ const Applications = props => {
         <div className="animated fadeIn">
             <Row>
                 <Col md="12">
-                    <ApplicationsTable loading={loading} error={error} data={data.applications} />
+                    <ApplicationsTable data={data.applications} />
                 </Col>
             </Row>
         </div>
